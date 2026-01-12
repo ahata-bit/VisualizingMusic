@@ -341,8 +341,8 @@ def initialize_marbling_with_colors():
     
     # BPMに基づくマーブリングの崩し処理
     if bpm > 0 and len(circles) > 0:
-        marble_break_count = max(1, int(len(midi_notes) / bpm))
-        marble_break_count = min(marble_break_count, 5)  # 最大5箇所まで
+        marble_break_count = max(1, int((len(midi_notes) / bpm)*5))
+        #marble_break_count = min(marble_break_count, 5)  # 最大5箇所まで
         
         # x軸方向に伝播するように、y方向に沿った崩し位置を選ぶ
         if marble_break_count == 1:
