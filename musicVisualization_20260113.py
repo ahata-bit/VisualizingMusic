@@ -9,6 +9,11 @@ from math import cos, sin, sqrt, pi
 from PIL import Image, ImageGrab, EpsImagePlugin
 from scipy.ndimage import median_filter
 
+# マーブリング崩し箇所の重み（コード内で変更してください）
+MARBLE_BREAK_WEIGHT = 1.0
+# 崩しの強さ（大きくすると変位が増える）
+MARBLE_BREAK_INTENSITY = 2.0
+
 
 #テンポ推定-----------------------------------------------
 file_path = input("解析したい音声ファイルのパスを入力してください: ").strip().strip('"')
@@ -33,18 +38,18 @@ print(f"検出されたBPM: {bpm:.2f}")
 music2vec = tf.keras.models.load_model('E:/zemi/GC/music2vec_10epochs.keras')
 
 # ジャンルリスト（学習時と同じ順番で）
-genre_list = ['blues', 'classical', 'country', 'disco', 'hiphop', 'jazz', 'metal', 'pop', 'reggae', 'rock']
+genre_list = [ 'metal', 'rock', 'pop', 'country', 'disco','blues', 'jazz', 'reggae', 'hiphop', 'classical' ]
 color_list = [
-    (255 , 173 , 173),    # blues
-    (255 , 173 , 214),    # classical 
-    (255 , 173 , 255),    # country
-    (214 , 173 , 255),  # disco
-    (173 , 173 , 255),  # hiphop
-    (173 , 214 , 255),  # jazz
-    (173 , 255 , 255),# metal
-    (173 , 255 , 214),  # pop
-    (173 , 255 , 173),   # reggae
-    (214 , 255 , 173) # rock
+    (255 , 173 , 173),    # metal
+    (255 , 173 , 214),    # rock 
+    (255 , 173 , 255),    # pop
+    (214 , 173 , 255),  # country
+    (173 , 173 , 255),  # disco
+    (173 , 214 , 255),  # blues
+    (173 , 255 , 255),  # jazz
+    (173 , 255 , 214),  # reggae
+    (173 , 255 , 173),   # hiphop
+    (214 , 255 , 173) # classical
 ]
 
 # 前処理
@@ -54,12 +59,22 @@ step = window_size
 
 results = []
 for start in range(0, len(y) - window_size + 1, step):
-    chunk = y[start:start+window_size]
+    end = start + window_size
+    chunk = y[start:end]
     chunk = chunk * 256.0
     chunk = np.reshape(chunk, (-1, 1))
     input_data = np.expand_dims(chunk, axis=0)  # (1, 675808, 1)
     pred = music2vec.predict(input_data)
-    results.append(np.argmax(pred))
+    pred_idx = int(np.argmax(pred))
+    pred_conf = float(np.max(pred))
+    results.append(pred_idx)
+    # セグメント単位の結果を出力（開始秒, 終了秒, ジャンル名, インデックス, 信頼度）
+    try:
+        start_sec = start / sr
+        end_sec = end / sr
+        print(f"Segment {start_sec:.2f}s-{end_sec:.2f}s -> {genre_list[pred_idx]} (idx={pred_idx}, conf={pred_conf:.3f})")
+    except Exception:
+        print(f"Segment {start}-{end} samples -> idx={pred_idx}, conf={pred_conf:.3f}")
 
 remainder = len(y) % window_size
 if remainder != 0 and len(y) > window_size // 2:
@@ -70,7 +85,17 @@ if remainder != 0 and len(y) > window_size // 2:
     chunk = np.reshape(chunk, (-1, 1))
     input_data = np.expand_dims(chunk, axis=0)
     pred = music2vec.predict(input_data)
-    results.append(np.argmax(pred))
+    pred_idx = int(np.argmax(pred))
+    pred_conf = float(np.max(pred))
+    results.append(pred_idx)
+    # 余り区間の結果を出力
+    try:
+        start_sec = len(y) - remainder
+        start_sec = start_sec / sr
+        end_sec = len(y) / sr
+        print(f"Remainder {start_sec:.2f}s-{end_sec:.2f}s -> {genre_list[pred_idx]} (idx={pred_idx}, conf={pred_conf:.3f})")
+    except Exception:
+        print(f"Remainder samples -> idx={pred_idx}, conf={pred_conf:.3f}")
 
 # 多数決で最終ジャンル決定
 if results:
@@ -263,7 +288,7 @@ class config:
     polygonSides = 360
     random_color = True
     random_size = False
-    fixed_size = 30  # サイズを少し小さくして、より多くの円を描画可能に
+    fixed_size = 20  # サイズを少し小さくして、より多くの円を描画可能に
     @staticmethod
     def racalc():
         pass
@@ -341,49 +366,88 @@ def initialize_marbling_with_colors():
     
     # BPMに基づくマーブリングの崩し処理
     if bpm > 0 and len(circles) > 0:
-        marble_break_count = max(1, int((len(midi_notes) / bpm)*5))
-        #marble_break_count = min(marble_break_count, 5)  # 最大5箇所まで
+        # 元の算出（保持）
+        raw_count = max(1, int(len(midi_notes) / bpm))
+        # コード内定義の重みを適用
+        weight = float(MARBLE_BREAK_WEIGHT)
+        weighted = int(round(raw_count * weight))
+        applied = max(1, min(5, weighted))  # 1..5 にクランプ
+        print(f"marble_break_count (raw)={raw_count}, weight={weight}, applied={applied}")
+        marble_break_count = raw_count*10
         
-        # x軸方向に伝播するように、y方向に沿った崩し位置を選ぶ
+        # 伝播と変位を x 軸方向にする：左→右へ伝播し、各円を水平方向にずらす
         if marble_break_count == 1:
-            y_positions = [window_height // 2]
+            x_positions = [window_width // 2]
         elif marble_break_count == 2:
-            y_positions = [window_height // 4, window_height * 3 // 4]
+            x_positions = [window_width // 4, window_width * 3 // 4]
         else:
-            y_positions = [int(window_height * (i + 1) / (marble_break_count + 1)) for i in range(marble_break_count)]
+            x_positions = [int(window_width * (i + 1) / (marble_break_count + 1)) for i in range(marble_break_count)]
 
-        break_height = window_height // 5
+        break_width = window_width // 5
         break_range = config.fixed_size * 3
 
         print(f"マーブリング崩し処理を{marble_break_count}箇所で実行します...")
-        
-        for y_break in y_positions:
-            # 伝播用の初期シフト値（y方向のずれ）
-            shift = random.randint(-break_height, break_height)
+
+        for i, x_break in enumerate(x_positions):
+            # 伝播用の初期シフト値（x方向のずれ）
+            shift = random.randint(-break_width, break_width)
             # 伝播度合い（0.5なら前のずれの半分を次に伝える）
             propagate = 0.5
 
-            # 円をx座標順にソート（左から右へ伝播させるイメージ）
-            sorted_circles = sorted(circles, key=lambda c: c.position[0])
+            # 交互に伝播方向を切り替える：偶数番目は右->左、奇数番目は左->右
+            if i % 2 == 0:
+                # 右から左へ伝播（右端の円から処理）
+                sorted_circles = sorted(circles, key=lambda c: c.position[0], reverse=True)
+                direction = 'rtl'
+            else:
+                # 左から右へ伝播（左端の円から処理）
+                sorted_circles = sorted(circles, key=lambda c: c.position[0])
+                direction = 'ltr'
             prev_shift = shift
 
             for c in sorted_circles:
-                # 円の中心が崩し位置y_break付近ならy方向にずらす
-                center_y = c.position[1]
-                dist = abs(center_y - y_break)
+                # 円の中心が崩し位置 x_break 付近なら x 方向にずらす
+                center_x = c.position[0]
+                dist = abs(center_x - x_break)
                 if dist < break_range:
                     # 距離に応じて減衰させる（中心付近で最大、端で0）
                     attenuation = max(0.0, 1.0 - (dist / break_range))
                     # 前のずれに追従してずらす + 少しランダムノイズ
-                    this_shift = prev_shift * propagate + random.randint(-break_height//10, break_height//10)
+                    this_shift = prev_shift * propagate + random.randint(-break_width//10, break_width//10)
                     this_shift = this_shift * attenuation
-                    # 非線形な歪み（サインで微妙な波打ちを追加）
-                    wave = int(5 * sin((c.position[0] / window_width) * 2 * pi))
+                    # 強度を適用して変位を増幅
+                    this_shift = this_shift * MARBLE_BREAK_INTENSITY
+                    # 波打ち成分も強度に応じて増やす
+                    wave = int(5 * MARBLE_BREAK_INTENSITY * sin((c.position[0] / window_width) * 2 * pi))
                     total_shift = int(this_shift) + wave
-                    new_points = [(x, y + total_shift) for (x, y) in c.points]
+                    # インクを引き延ばすように、中心は動かさず各頂点を相対的に伸長する
+                    cx, cy = c.position
+                    new_points = []
+                    for (px, py) in c.points:
+                        rel_x = px - cx
+                        rel_y = py - cy
+                            # グローバルな左->右の位置（0..1）に基づく係数
+                        if direction == 'ltr':
+                            global_factor = max(0.0, min(1.0, px / float(window_width)))
+                        else:
+                            # 右->左 の場合は右端側を1.0として係数を与える
+                            global_factor = max(0.0, min(1.0, 1.0 - (px / float(window_width))))
+                        # 伸長量の基準（total_shift を正規化）
+                        denom = break_width if break_width != 0 else 1.0
+                        stretch_amount = (total_shift / denom) * global_factor
+                        stretch = 1.0 + stretch_amount * MARBLE_BREAK_INTENSITY
+                        # 横に伸ばしつつ縦を少し押しつぶす（テーパー効果）
+                        compress = 1.0 - 0.25 * global_factor
+                        # leading edge は少し太く描画
+                        thickness_scale = 1.0 + 0.4 * global_factor
+
+                        new_rel_x = rel_x * stretch * thickness_scale
+                        new_rel_y = rel_y * compress * thickness_scale
+                        new_px = cx + new_rel_x
+                        new_py = cy + new_rel_y
+                        new_points.append((new_px, new_py))
                     c.points = new_points
-                    # 位置も更新
-                    c.position = (c.position[0], c.position[1] + total_shift)
+                    # 中心は動かさない（インクが引き伸ばされる表現）
                     prev_shift = this_shift
         
         print("マーブリング崩し処理が完了しました")
