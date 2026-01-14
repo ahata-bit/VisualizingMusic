@@ -1,0 +1,64 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Distribution / packaging
+build/
+dist/
+*.egg-info
+.eggs/
+
+# Virtual environments
+.env
+.env/
+venv/
+venv*/
+.venv/
+.venv*/
+
+# PyInstaller
+*.manifest
+*.spec
+
+# IDEs
+.vscode/
+.idea/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs and databases
+*.log
+*.sqlite3
+
+# Workspace
+*.code-workspace
+
+# pipenv
+Pipfile.lock
+
+# mypy
+.mypy_cache/
+
+# coverage
+htmlcov/
+.coverage
+
+# Ignore environment variable files
+.env
+
+# Temporary files
+*.tmp
+*.swp
+*.txt
+*.png
+*.python
+
+# Unusing files(code)
+librosa_test.py
+show_color_map.py
