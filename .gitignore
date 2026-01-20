@@ -63,3 +63,4 @@ htmlcov/
 librosa_test.py
 show_color_map.py
 marbling_test.py
+abstractData.py
