@@ -51,6 +51,7 @@ htmlcov/
 
 # Ignore environment variable files
 .env
+noUse/
 
 # Temporary files
 *.tmp
