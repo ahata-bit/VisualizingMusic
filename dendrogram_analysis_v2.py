@@ -1,6 +1,7 @@
 import os
 import numpy as np
 from scipy.cluster.hierarchy import dendrogram, linkage
+from sklearn.decomposition import PCA
 import matplotlib.pyplot as plt
 import cv2
 import matplotlib
@@ -31,42 +32,41 @@ def extract_features(image_path):
     features = np.hstack([mean_color, hist])
     return features
 
-def generate_dendrogram(image_dir, genres):
+def apply_pca(features, n_components=2):
+    """
+    特徴量の次元削減を行う。
+
+    Args:
+        features (np.array): 特徴量データ。
+        n_components (int): 次元数。
+
+    Returns:
+        np.array: 次元削減後の特徴量。
+    """
+    pca = PCA(n_components=n_components)
+    reduced_features = pca.fit_transform(features)
+    return reduced_features
+
+def generate_dendrogram(image_dir):
     """
     デンドログラムを生成して表示する。
 
     Args:
         image_dir (str): 画像が保存されているディレクトリ。
-        genres (list): 分析対象のジャンル名のリスト。
     """
     features = []
     labels = []
 
-    for genre_index, genre in enumerate(genres):
-        genre_path = os.path.join(image_dir, genre)
-        sub_folder = f"{genre}To{genre.capitalize()}"
-        sub_folder_path = os.path.join(genre_path, sub_folder)
-
-        if not os.path.isdir(sub_folder_path):
-            print(f"[警告] ジャンル '{sub_folder}' のフォルダが見つかりません。")
-            continue
-
-        genre_features = []
-        for filename in os.listdir(sub_folder_path):
-            if filename.lower().endswith((".png", ".jpg", ".jpeg", ".bmp")):
-                filepath = os.path.join(sub_folder_path, filename)
-                print(f"[ロード中] 画像: {filepath}")
-                feature = extract_features(filepath)
-                if feature is not None:
-                    genre_features.append(feature)
-
-        if genre_features:
-            # 代表的な画像を選択（平均に最も近い画像）
-            mean_feature = np.mean(genre_features, axis=0)
-            closest_index = np.argmin(np.linalg.norm(genre_features - mean_feature, axis=1))
-            representative_feature = genre_features[closest_index]
-            features.append(representative_feature)
-            labels.append(genre)
+    for filename in os.listdir(image_dir):
+        if filename.lower().endswith((".png", ".jpg", ".jpeg", ".bmp")):
+            filepath = os.path.join(image_dir, filename)
+            print(f"[ロード中] 画像: {filepath}")
+            feature = extract_features(filepath)
+            if feature is not None:
+                features.append(feature)
+                # ファイル名からジャンル名を抽出してラベルに設定
+                genre = next((g for g in ['blues', 'classical', 'country', 'disco', 'hiphop', 'jazz', 'metal', 'pop', 'reggae', 'rock'] if g in filename.lower()), 'unknown')
+                labels.append(genre)  # ジャンル名をラベルとして使用
 
     if not features:
         print("[エラー] 特徴量が抽出されませんでした。")
@@ -74,22 +74,22 @@ def generate_dendrogram(image_dir, genres):
 
     features = np.array(features)
 
+    # PCAを適用
+    reduced_features = apply_pca(features)
+
     # 階層型クラスタリングを実行
-    linked = linkage(features, method='ward')
+    linked = linkage(reduced_features, method='ward')
 
     # デンドログラムをプロット
     plt.figure(figsize=(10, 7))
     dendrogram(linked, labels=labels, orientation='top', distance_sort='descending', show_leaf_counts=True)
-    plt.title("ジャンル間の階層型クラスタリング（代表画像）")
-    plt.xlabel("ジャンル")
+    plt.title("画像間の階層型クラスタリング")
+    plt.xlabel("画像")
     plt.ylabel("距離")
     plt.show()
 
 if __name__ == "__main__":
     # ディレクトリを指定
-    image_dir = "E:\GC\music\classification_by_visualizationMethod"
+    image_dir = r"E:\GC\music\representational_pic_v2"  # 入力ディレクトリ
 
-    # 分析対象のジャンル
-    genres = ["blues", "classical", "country", "disco", "hiphop", "jazz", "metal", "pop", "reggae", "rock"]
-
-    generate_dendrogram(image_dir, genres)
+    generate_dendrogram(image_dir)
